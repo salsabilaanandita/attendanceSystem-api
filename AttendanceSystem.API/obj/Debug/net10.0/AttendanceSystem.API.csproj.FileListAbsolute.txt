@@ -133,3 +133,4 @@ C:\for_work\AttendanceSystem\AttendanceSystem.API\obj\Debug\net10.0\refint\Atten
 C:\for_work\AttendanceSystem\AttendanceSystem.API\obj\Debug\net10.0\AttendanceSystem.API.pdb
 C:\for_work\AttendanceSystem\AttendanceSystem.API\obj\Debug\net10.0\AttendanceSystem.API.genruntimeconfig.cache
 C:\for_work\AttendanceSystem\AttendanceSystem.API\obj\Debug\net10.0\ref\AttendanceSystem.API.dll
+C:\for_work\AttendanceSystem\AttendanceSystem.API\obj\Debug\net10.0\AttendanceSystem.API.sourcelink.json
