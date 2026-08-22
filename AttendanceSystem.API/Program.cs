@@ -15,20 +15,26 @@ builder.Services.AddControllers()
 
 builder.Services.AddOpenApi();
 
-// --- 1. AMBIL DAN PARSE DATABASE_URL (RAILWAY / LOCAL) ---
-var envConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
-var rawConnectionString = !string.IsNullOrEmpty(envConnectionString) 
-    ? envConnectionString 
-    : builder.Configuration.GetConnectionString("DefaultConnection");
+// --- 1. AMBIL CONNECTION STRING DENGAN MULTI-FALLBACK ---
+var rawConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
+// Fallback darurat jika Railway tidak mengirimkan DATABASE_URL/DefaultConnection
 if (string.IsNullOrEmpty(rawConnectionString))
 {
-    throw new InvalidOperationException("CRITICAL ERROR: Connection string 'DATABASE_URL' or 'DefaultConnection' was not found in environment variables or appsettings.json.");
+    var pgHost = Environment.GetEnvironmentVariable("PGHOST") ?? "localhost";
+    var pgPort = Environment.GetEnvironmentVariable("PGPORT") ?? "5432";
+    var pgDb = Environment.GetEnvironmentVariable("PGDATABASE") ?? "attendanceSystem_db";
+    var pgUser = Environment.GetEnvironmentVariable("PGUSER") ?? "postgres";
+    var pgPass = Environment.GetEnvironmentVariable("PGPASSWORD") ?? "";
+
+    rawConnectionString = $"Host={pgHost};Port={pgPort};Database={pgDb};Username={pgUser};Password={pgPass};";
 }
 
 string connectionString;
 
-// Tangani format URL postgresql:// atau postgres:// dari Railway
+// Parse jika formatnya URL postgresql:// atau postgres:// dari Railway
 if (rawConnectionString.StartsWith("postgresql://") || rawConnectionString.StartsWith("postgres://"))
 {
     var uri = new Uri(rawConnectionString);
@@ -88,7 +94,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
-    // Jalankan auto migration ke PostgreSQL
+    // Auto Migrate DB Postgres Railway
     await db.Database.MigrateAsync();
 
     // Seed default roles
