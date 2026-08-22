@@ -1,0 +1,796 @@
+# 🧪 Testing Guide V2 - Attendance System API
+
+Base URL: `http://localhost:5152` (cek port aktual dari `dotnet run`)
+
+> ⚠️ Struktur database sudah berubah dari testing sebelumnya:
+> - `Employee` **tidak lagi punya `email`** (email sekarang cuma ada di `User`)
+> - `Employee` sekarang punya `nik` (opsional, unique)
+> - `Employee.departmentId` sekarang **opsional** (boleh null)
+> - Relasi User↔Employee dibalik: `Employee.userId` (bukan `User.employeeId`)
+> - Field attendance: `attendanceDate` (bukan `date`), `checkIn`/`checkOut` sekarang **tanggal+jam lengkap** (bukan cuma jam), `notes` (bukan `note`)
+
+---
+
+## 1️⃣ REGISTER
+
+### 1.1 Register Admin
+```
+POST /api/auth/register
+```
+```json
+{
+  "email": "admin@company.com",
+  "password": "Admin123!",
+  "roleName": "Admin"
+}
+```
+**Expected:** `200 OK` → `{ "message": "Registrasi berhasil" }`
+
+### 1.2 Register HR
+```
+POST /api/auth/register
+```
+```json
+{
+  "email": "hr@company.com",
+  "password": "Hr123!",
+  "roleName": "HR"
+}
+```
+
+> ⚠️ Akun **Employee** belum bisa register sekarang — data `Employee`-nya harus dibuat dulu (Section 3), baru register akun login dengan `employeeId` (Section 4).
+
+---
+
+## 2️⃣ LOGIN — Admin & HR
+
+### 2.1 Login Admin
+```
+POST /api/auth/login
+```
+```json
+{
+  "email": "admin@company.com",
+  "password": "Admin123!"
+}
+```
+**Expected:**
+```json
+{
+  "token": "eyJ...",
+  "email": "admin@company.com",
+  "role": "Admin",
+  "employeeId": null,
+  "employeeName": null
+}
+```
+📋 **Simpan sebagai `TOKEN_ADMIN`**
+
+### 2.2 Login HR
+```
+POST /api/auth/login
+```
+```json
+{
+  "email": "hr@company.com",
+  "password": "Hr123!"
+}
+```
+📋 **Simpan sebagai `TOKEN_HR`**
+
+---
+
+## 3️⃣ DEPARTMENT — sebagai Admin
+
+Header semua request: `Authorization: Bearer {TOKEN_ADMIN}`
+
+### 3.1 Create Department
+```
+POST /api/department
+```
+```json
+{
+  "name": "IT",
+  "description": "Divisi Teknologi Informasi"
+}
+```
+📋 **Simpan `id` sebagai `DEPT_ID`**
+
+### 3.2 Get All
+```
+GET /api/department
+```
+
+### 3.3 Get by ID
+```
+GET /api/department/{DEPT_ID}
+```
+
+### 3.4 Update
+```
+PUT /api/department/{DEPT_ID}
+```
+```json
+{
+  "name": "IT & Technology",
+  "description": "Updated description"
+}
+```
+
+### 3.5 Duplicate Name (Harus Gagal)
+```
+POST /api/department
+```
+```json
+{
+  "name": "IT & Technology",
+  "description": "test duplikat"
+}
+```
+**Expected:** `400` → `"Nama departemen sudah ada"`
+
+---
+
+## 4️⃣ EMPLOYEE — sebagai HR
+
+Header semua request: `Authorization: Bearer {TOKEN_HR}`
+
+### 4.1 Create Employee (dengan Department)
+```
+POST /api/employee
+```
+```json
+{
+  "nik": "EMP001",
+  "name": "Budi Santoso",
+  "phone": "081234567890",
+  "position": "Software Engineer",
+  "joinDate": "2024-01-15",
+  "departmentId": "{DEPT_ID}"
+}
+```
+📋 **Simpan `id` sebagai `EMP_ID_BUDI`**
+
+### 4.2 Create Employee Tanpa Department (Testing Nullable)
+```
+POST /api/employee
+```
+```json
+{
+  "nik": "EMP002",
+  "name": "Siti Aminah",
+  "phone": "081298765432",
+  "position": "HR Staff",
+  "joinDate": "2023-06-01",
+  "departmentId": null
+}
+```
+**Expected:** `201 Created` — berhasil walau `departmentId` null
+📋 **Simpan `id` sebagai `EMP_ID_SITI`**
+
+### 4.3 Get All
+```
+GET /api/employee
+```
+
+### 4.4 Search by Name/NIK
+```
+GET /api/employee?search=budi
+GET /api/employee?search=EMP001
+```
+
+### 4.5 Filter by Department
+```
+GET /api/employee?departmentId={DEPT_ID}
+```
+
+### 4.6 Filter by Status
+```
+GET /api/employee?status=Active
+```
+
+### 4.7 Get by ID
+```
+GET /api/employee/{EMP_ID_BUDI}
+```
+
+### 4.8 Update Employee
+```
+PUT /api/employee/{EMP_ID_BUDI}
+```
+```json
+{
+  "nik": "EMP001",
+  "name": "Budi Santoso Wijaya",
+  "phone": "081234567891",
+  "position": "Senior Software Engineer",
+  "departmentId": "{DEPT_ID}"
+}
+```
+
+### 4.9 Deactivate
+```
+PATCH /api/employee/{EMP_ID_SITI}/deactivate
+```
+Verifikasi:
+```
+GET /api/employee?status=Inactive
+```
+
+### 4.10 Activate Lagi
+```
+PATCH /api/employee/{EMP_ID_SITI}/activate
+```
+
+### 4.11 Create dengan NIK Duplikat (Harus Gagal)
+```
+POST /api/employee
+```
+```json
+{
+  "nik": "EMP001",
+  "name": "Duplikat Test",
+  "position": "Test",
+  "joinDate": "2024-01-01",
+  "departmentId": "{DEPT_ID}"
+}
+```
+**Expected:** `400` → `"NIK sudah digunakan karyawan lain"`
+
+---
+
+## 5️⃣ REGISTER & LOGIN — Employee (Budi)
+
+### 5.1 Register Akun Login untuk Budi
+```
+POST /api/auth/register
+```
+```json
+{
+  "email": "budi@company.com",
+  "password": "Budi123!",
+  "roleName": "Employee",
+  "employeeId": "{EMP_ID_BUDI}"
+}
+```
+**Expected:** `200 OK`
+
+### 5.2 Coba Register Ulang dengan Employee yang Sama (Harus Gagal)
+```
+POST /api/auth/register
+```
+```json
+{
+  "email": "budi2@company.com",
+  "password": "Budi123!",
+  "roleName": "Employee",
+  "employeeId": "{EMP_ID_BUDI}"
+}
+```
+**Expected:** `400` → `"Employee ini sudah punya akun login"`
+
+### 5.3 Login sebagai Budi
+```
+POST /api/auth/login
+```
+```json
+{
+  "email": "budi@company.com",
+  "password": "Budi123!"
+}
+```
+**Expected:**
+```json
+{
+  "token": "eyJ...",
+  "role": "Employee",
+  "employeeId": "...",
+  "employeeName": "Budi Santoso Wijaya"
+}
+```
+📋 **Simpan sebagai `TOKEN_BUDI`**
+
+---
+
+## 6️⃣ ATTENDANCE — sebagai Employee (Budi)
+
+Header semua request: `Authorization: Bearer {TOKEN_BUDI}`
+
+### 6.1 Check In
+```
+POST /api/attendance/checkin
+```
+```json
+{
+  "note": "Masuk kerja"
+}
+```
+**Expected:**
+```json
+{
+  "message": "Check-in berhasil",
+  "checkInTime": "2026-08-22T14:30:00...",
+  "status": "Present" atau "Late"
+}
+```
+
+### 6.2 Check In Lagi (Harus Gagal)
+```
+POST /api/attendance/checkin
+```
+```json
+{ "note": "" }
+```
+**Expected:** `400` → `"Anda sudah check-in hari ini"`
+
+### 6.3 Lihat Absensi Hari Ini
+```
+GET /api/attendance/today
+```
+**Expected:** `checkOut: null`
+
+### 6.4 Check Out
+```
+POST /api/attendance/checkout
+```
+```json
+{
+  "note": "Pulang kerja"
+}
+```
+**Expected:** `checkOutTime` terisi tanggal+jam lengkap
+
+### 6.5 Check Out Lagi (Harus Gagal)
+```
+POST /api/attendance/checkout
+```
+```json
+{ "note": "" }
+```
+**Expected:** `400` → `"Anda sudah check-out hari ini"`
+
+### 6.6 Verifikasi Today Lagi
+```
+GET /api/attendance/today
+```
+**Expected:** `checkOut` sudah terisi
+
+### 6.7 Lihat History Sendiri
+```
+GET /api/attendance/history
+```
+
+---
+
+## 7️⃣ SECURITY CHECK — Batasan Akses Employee
+
+Masih pakai `TOKEN_BUDI`:
+
+### 7.1 Lihat "Today" — Harus Cuma Data Sendiri
+```
+GET /api/attendance/today
+```
+**Expected:** Cuma muncul data Budi, walau ada karyawan lain yang sudah check-in.
+
+---
+
+## 8️⃣ ATTENDANCE — Full Access sebagai Admin/HR
+
+Header: `Authorization: Bearer {TOKEN_ADMIN}` atau `{TOKEN_HR}`
+
+### 8.1 Lihat Semua Absensi Hari Ini
+```
+GET /api/attendance/today
+```
+**Expected:** Muncul semua karyawan yang sudah check-in.
+
+### 8.2 Filter by Employee
+```
+GET /api/attendance/history?employeeId={EMP_ID_BUDI}
+```
+
+### 8.3 Filter by Status
+```
+GET /api/attendance/history?status=Late
+```
+
+### 8.4 Filter by Date Range
+```
+GET /api/attendance/history?startDate=2026-08-01&endDate=2026-08-31
+```
+
+### 8.5 Filter Kombinasi
+```
+GET /api/attendance/history?status=Late&startDate=2026-08-01&endDate=2026-08-31
+```
+
+---
+
+## 9️⃣ TANPA TOKEN (Harus Ditolak)
+
+Hapus header Authorization:
+```
+GET /api/attendance/today
+```
+**Expected:** `401 Unauthorized`
+
+---
+
+## ✅ Checklist Ringkasan
+
+| # | Fitur | Role | Expected |
+|---|---|---|---|
+| 1.1-1.2 | Register Admin & HR | - | 200 OK |
+| 2.1-2.2 | Login Admin & HR | - | Dapat token |
+| 3.1-3.5 | Department CRUD | Admin | Sukses sesuai skenario |
+| 4.1-4.11 | Employee CRUD (Nik, nullable dept) | HR | Sukses sesuai skenario |
+| 5.1-5.3 | Register & Login Employee | - | Dapat token dengan employeeId |
+| 6.1-6.7 | Check In/Out & History | Employee | Sukses & validasi anti-dobel |
+| 7.1 | Batasan akses Employee | Employee | Cuma lihat data sendiri |
+| 8.1-8.5 | Full access & filter | Admin/HR | Bisa lihat & filter semua data |
+| 9 | Tanpa token | - | 401 Unauthorized |
+
+---
+
+## 📝 Catatan ID untuk Referensi
+
+```
+TOKEN_ADMIN   : ___________________________
+TOKEN_HR      : ___________________________
+TOKEN_BUDI    : ___________________________
+DEPT_ID       : ___________________________
+EMP_ID_BUDI   : ___________________________
+EMP_ID_SITI   : ___________________________
+```
+
+---
+
+## 🔜 Belum Ada Endpoint (Model Sudah Ada di Database)
+
+Tabel `Shifts` dan `Leaves` sudah dibuat di database, tapi **Controller-nya belum kita bikin**. Kalau mau ditest, kita perlu bikin dulu:
+- `ShiftController` (CRUD jam kerja/shift)
+- `LeaveController` (pengajuan cuti/izin/sakit + approve/reject)
+
+Kabari kalau mau lanjut ke situ setelah testing di atas selesai semua.
+
+# 🧪 Testing Guide V3 - Shift & Leave API
+
+Base URL: `http://localhost:5152` (cek port aktual dari `dotnet run`)
+
+> Lanjutan dari `Testing_Guide_AttendanceSystem_V2.md`. Panduan ini asumsi kamu **sudah punya**:
+> - `TOKEN_ADMIN`, `TOKEN_HR`, `TOKEN_BUDI` dari testing sebelumnya
+> - `DEPT_ID`, `EMP_ID_BUDI` dari testing sebelumnya
+>
+> Kalau token/ID di atas udah expired atau database sempat di-reset lagi, ulangi dulu Section 1-5 dari `Testing_Guide_AttendanceSystem_V2.md` sebelum lanjut ke sini.
+
+---
+
+## 1️⃣ SHIFT — Testing sebagai Admin/HR
+
+Header semua request: `Authorization: Bearer {TOKEN_ADMIN}` atau `{TOKEN_HR}`
+
+### 1.1 Create Shift — Shift Pagi
+```
+POST /api/shift
+```
+```json
+{
+  "name": "Shift Pagi",
+  "startTime": "08:00:00",
+  "endTime": "17:00:00",
+  "gracePeriodMinutes": 15
+}
+```
+**Expected:** `201 Created`, dapat `id` → 📋 **simpan sebagai `SHIFT_ID_PAGI`**
+
+### 1.2 Create Shift — Shift Malam (buat variasi testing)
+```
+POST /api/shift
+```
+```json
+{
+  "name": "Shift Malam",
+  "startTime": "20:00:00",
+  "endTime": "05:00:00",
+  "gracePeriodMinutes": 10
+}
+```
+📋 **simpan sebagai `SHIFT_ID_MALAM`**
+
+### 1.3 Create Shift dengan Jam Salah (Harus Gagal)
+```
+POST /api/shift
+```
+```json
+{
+  "name": "Shift Error",
+  "startTime": "17:00:00",
+  "endTime": "08:00:00",
+  "gracePeriodMinutes": 0
+}
+```
+**Expected:** `400 Bad Request` → `"Jam selesai harus lebih besar dari jam mulai"`
+
+> Catatan: untuk shift malam yang beneran lewat tengah malam (jam 20:00–05:00), validasi sederhana ini sebenarnya akan nolak juga karena `endTime < startTime`. Kalau kamu butuh shift lintas hari beneran, kasih tau nanti kita perbaiki validasinya (butuh logic tambahan).
+
+### 1.4 Get All Shifts
+```
+GET /api/shift
+```
+**Expected:** Muncul "Shift Pagi" (dan "Shift Malam" kalau 1.2 berhasil)
+
+### 1.5 Get by ID
+```
+GET /api/shift/{SHIFT_ID_PAGI}
+```
+
+### 1.6 Update Shift
+```
+PUT /api/shift/{SHIFT_ID_PAGI}
+```
+```json
+{
+  "name": "Shift Pagi Updated",
+  "startTime": "08:30:00",
+  "endTime": "17:30:00",
+  "gracePeriodMinutes": 20
+}
+```
+**Expected:** `200 OK` → `"Shift berhasil diupdate"`
+
+### 1.7 Employee Coba Create Shift (Harus Ditolak)
+Ganti token ke `TOKEN_BUDI`:
+```
+POST /api/shift
+Authorization: Bearer {TOKEN_BUDI}
+```
+```json
+{
+  "name": "Shift Test",
+  "startTime": "09:00:00",
+  "endTime": "18:00:00",
+  "gracePeriodMinutes": 0
+}
+```
+**Expected:** `403 Forbidden`
+
+### 1.8 HR Coba Delete Shift (Harus Ditolak — Cuma Admin)
+```
+DELETE /api/shift/{SHIFT_ID_PAGI}
+Authorization: Bearer {TOKEN_HR}
+```
+**Expected:** `403 Forbidden`
+
+### 1.9 Admin Delete Shift (Harus Berhasil)
+```
+DELETE /api/shift/{SHIFT_ID_PAGI}
+Authorization: Bearer {TOKEN_ADMIN}
+```
+**Expected:** `200 OK` → `"Shift berhasil dihapus"`
+
+> ⚠️ Setelah step ini, `SHIFT_ID_PAGI` sudah terhapus. Kalau butuh shift buat testing selanjutnya, pakai `SHIFT_ID_MALAM` atau buat shift baru.
+
+---
+
+## 2️⃣ LEAVE — Pengajuan sebagai Employee (Budi)
+
+Header semua request: `Authorization: Bearer {TOKEN_BUDI}`
+
+### 2.1 Ajukan Cuti
+```
+POST /api/leave
+```
+```json
+{
+  "type": "Cuti",
+  "startDate": "2026-09-01",
+  "endDate": "2026-09-03",
+  "reason": "Acara keluarga",
+  "attachmentUrl": null
+}
+```
+**Expected:** `200 OK`, dapat `leaveId` → 📋 **simpan sebagai `LEAVE_ID_CUTI`**
+
+### 2.2 Ajukan Sakit
+```
+POST /api/leave
+```
+```json
+{
+  "type": "Sakit",
+  "startDate": "2026-08-25",
+  "endDate": "2026-08-26",
+  "reason": "Demam tinggi, surat dokter terlampir",
+  "attachmentUrl": "https://example.com/surat-dokter.pdf"
+}
+```
+📋 **simpan sebagai `LEAVE_ID_SAKIT`**
+
+### 2.3 Ajukan dengan Tipe Tidak Valid (Harus Gagal)
+```
+POST /api/leave
+```
+```json
+{
+  "type": "Liburan",
+  "startDate": "2026-09-10",
+  "endDate": "2026-09-12",
+  "reason": "test tipe salah"
+}
+```
+**Expected:** `400 Bad Request` → `"Tipe pengajuan tidak valid..."`
+
+### 2.4 Ajukan dengan Tanggal Terbalik (Harus Gagal)
+```
+POST /api/leave
+```
+```json
+{
+  "type": "Izin",
+  "startDate": "2026-09-05",
+  "endDate": "2026-09-01",
+  "reason": "test tanggal salah"
+}
+```
+**Expected:** `400 Bad Request` → `"Tanggal selesai tidak boleh sebelum tanggal mulai"`
+
+### 2.5 Admin/HR Coba Ajukan Leave (Harus Ditolak — Cuma Employee)
+Ganti token ke `TOKEN_ADMIN`:
+```
+POST /api/leave
+Authorization: Bearer {TOKEN_ADMIN}
+```
+```json
+{
+  "type": "Cuti",
+  "startDate": "2026-09-01",
+  "endDate": "2026-09-02",
+  "reason": "test dari admin"
+}
+```
+**Expected:** `403 Forbidden`
+
+---
+
+## 3️⃣ LEAVE — Lihat Pengajuan
+
+### 3.1 Employee Lihat Pengajuan Sendiri
+```
+GET /api/leave
+Authorization: Bearer {TOKEN_BUDI}
+```
+**Expected:** Muncul 2 pengajuan Budi (Cuti & Sakit dari step 2.1, 2.2), status `Pending`
+
+### 3.2 Admin/HR Lihat Semua Pengajuan
+```
+GET /api/leave
+Authorization: Bearer {TOKEN_ADMIN}
+```
+**Expected:** Muncul semua pengajuan dari semua karyawan
+
+### 3.3 Filter by Status
+```
+GET /api/leave?status=Pending
+Authorization: Bearer {TOKEN_ADMIN}
+```
+
+### 3.4 Filter by Type
+```
+GET /api/leave?type=Sakit
+Authorization: Bearer {TOKEN_ADMIN}
+```
+
+### 3.5 Filter by Employee
+```
+GET /api/leave?employeeId={EMP_ID_BUDI}
+Authorization: Bearer {TOKEN_ADMIN}
+```
+
+### 3.6 Get by ID (Detail)
+```
+GET /api/leave/{LEAVE_ID_CUTI}
+Authorization: Bearer {TOKEN_BUDI}
+```
+
+### 3.7 Employee Coba Lihat Detail Pengajuan Orang Lain (Harus 404)
+> Buat karyawan lain dulu & ajukan leave atas namanya kalau mau test skenario ini secara penuh. Untuk sekarang, cukup pastikan `GetAll` Employee cuma nampilin miliknya sendiri (sudah diverifikasi di 3.1).
+
+---
+
+## 4️⃣ LEAVE — Approve & Reject sebagai Admin/HR
+
+Header: `Authorization: Bearer {TOKEN_ADMIN}` atau `{TOKEN_HR}`
+
+### 4.1 Approve Pengajuan Cuti
+```
+PATCH /api/leave/{LEAVE_ID_CUTI}/approve
+```
+```json
+{}
+```
+**Expected:** `200 OK` → `"Pengajuan berhasil disetujui"`
+
+### 4.2 Verifikasi Status Berubah
+```
+GET /api/leave/{LEAVE_ID_CUTI}
+```
+**Expected:** `status: "Approved"`, `approvedByEmail` terisi email admin/HR yang approve
+
+### 4.3 Coba Approve Lagi (Harus Gagal — Sudah Diproses)
+```
+PATCH /api/leave/{LEAVE_ID_CUTI}/approve
+```
+```json
+{}
+```
+**Expected:** `400 Bad Request` → `"Pengajuan ini sudah berstatus 'Approved'..."`
+
+### 4.4 Reject Pengajuan Sakit
+```
+PATCH /api/leave/{LEAVE_ID_SAKIT}/reject
+```
+```json
+{
+  "note": "Surat dokter tidak jelas, mohon upload ulang"
+}
+```
+**Expected:** `200 OK` → `"Pengajuan berhasil ditolak"`
+
+### 4.5 Verifikasi Reject
+```
+GET /api/leave/{LEAVE_ID_SAKIT}
+```
+**Expected:** `status: "Rejected"`, `reason` sudah ada tambahan `[Ditolak: ...]`
+
+### 4.6 Employee Coba Approve Pengajuan (Harus Ditolak)
+```
+PATCH /api/leave/{LEAVE_ID_CUTI}/approve
+Authorization: Bearer {TOKEN_BUDI}
+```
+```json
+{}
+```
+**Expected:** `403 Forbidden`
+
+---
+
+## ✅ Checklist Ringkasan
+
+| # | Fitur | Role | Expected |
+|---|---|---|---|
+| 1.1-1.2 | Create Shift | Admin/HR | 201 Created |
+| 1.3 | Create Shift jam salah | Admin/HR | 400 Bad Request |
+| 1.4-1.6 | Get/Update Shift | Admin/HR | Sukses |
+| 1.7 | Employee create shift | Employee | 403 Forbidden |
+| 1.8 | HR delete shift | HR | 403 Forbidden |
+| 1.9 | Admin delete shift | Admin | 200 OK |
+| 2.1-2.2 | Ajukan Cuti & Sakit | Employee | 200 OK |
+| 2.3-2.4 | Validasi tipe & tanggal salah | Employee | 400 Bad Request |
+| 2.5 | Admin ajukan leave | Admin | 403 Forbidden |
+| 3.1 | Employee lihat leave sendiri | Employee | Cuma miliknya |
+| 3.2-3.5 | Admin/HR lihat & filter semua | Admin/HR | Sukses |
+| 4.1-4.2 | Approve & verifikasi | Admin/HR | 200 OK, status berubah |
+| 4.3 | Approve dobel | Admin/HR | 400 Bad Request |
+| 4.4-4.5 | Reject & verifikasi | Admin/HR | 200 OK, reason bertambah |
+| 4.6 | Employee approve | Employee | 403 Forbidden |
+
+---
+
+## 📝 Catatan ID untuk Referensi
+
+```
+SHIFT_ID_PAGI   : ___________________________ (akan terhapus di step 1.9)
+SHIFT_ID_MALAM  : ___________________________
+LEAVE_ID_CUTI   : ___________________________
+LEAVE_ID_SAKIT  : ___________________________
+```
+
+---
+
+## 🔜 Yang Belum Ada (Untuk Dikerjakan Nanti)
+
+- **Attendance belum pakai `shiftId`** — saat ini `AttendanceController.CheckIn` masih hardcode jam standar `08:00` + toleransi 15 menit, belum menarik data dari tabel `Shifts` yang beneran di-assign ke karyawan. Perlu ditambahkan: field `shiftId` di `Employee` (karyawan pakai shift apa) atau di request check-in.
+- **Leave belum otomatis mempengaruhi status Attendance** — idealnya kalau leave di-approve untuk tanggal tertentu, sistem otomatis bikin record `Attendance` dengan `status: "Leave"` di tanggal itu, biar muncul di laporan absensi. Ini belum diimplementasi.
+- **Reports API** (Monthly Report, Employee Report, Department Report) belum dibuat.
+
+Kabari kalau mau lanjut ke salah satu poin di atas, atau pindah ke **WPF Frontend**.
