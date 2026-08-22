@@ -15,15 +15,21 @@ builder.Services.AddControllers()
 
 builder.Services.AddOpenApi();
 
-// --- BACA DATABASE_URL LANGSUNG DARI RAILWAY ---
+// --- 1. AMBIL DAN PARSE DATABASE_URL (RAILWAY / LOCAL) ---
 var envConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
 var rawConnectionString = !string.IsNullOrEmpty(envConnectionString) 
     ? envConnectionString 
     : builder.Configuration.GetConnectionString("DefaultConnection");
 
+if (string.IsNullOrEmpty(rawConnectionString))
+{
+    throw new InvalidOperationException("CRITICAL ERROR: Connection string 'DATABASE_URL' or 'DefaultConnection' was not found in environment variables or appsettings.json.");
+}
+
 string connectionString;
 
-if (!string.IsNullOrEmpty(rawConnectionString) && rawConnectionString.StartsWith("postgresql://"))
+// Tangani format URL postgresql:// atau postgres:// dari Railway
+if (rawConnectionString.StartsWith("postgresql://") || rawConnectionString.StartsWith("postgres://"))
 {
     var uri = new Uri(rawConnectionString);
     var userInfo = uri.UserInfo.Split(':');
@@ -37,17 +43,23 @@ if (!string.IsNullOrEmpty(rawConnectionString) && rawConnectionString.StartsWith
 }
 else
 {
-    connectionString = rawConnectionString!;
+    connectionString = rawConnectionString;
 }
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+// --- 2. INJEKSI SERVICES ---
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();   
 
-var jwtKey = builder.Configuration["Jwt:Key"]!;
+// --- 3. KONFIGURASI JWT ---
+var jwtKey = builder.Configuration["Jwt:Key"] 
+    ?? builder.Configuration["Jwt__Key"] 
+    ?? Environment.GetEnvironmentVariable("Jwt__Key")
+    ?? "AttendanceSystem_JWT_2026_SuperSecretKey_9xK7mP2qL8vN4rT6";
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -61,8 +73,8 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "AttendanceSystemAPI",
+        ValidAudience = builder.Configuration["Jwt:Audience"] ?? "AttendanceSystemUser",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
 });
@@ -71,12 +83,15 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Migration otomatis ke database Postgres Railway saat start
+// --- 4. AUTO MIGRATION & SEEDING ROLE ---
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    
+    // Jalankan auto migration ke PostgreSQL
     await db.Database.MigrateAsync();
 
+    // Seed default roles
     var defaultRoles = new[] { "Admin", "Employee" };
     foreach (var roleName in defaultRoles)
     {
