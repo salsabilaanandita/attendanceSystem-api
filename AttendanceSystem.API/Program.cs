@@ -15,13 +15,16 @@ builder.Services.AddControllers()
 
 builder.Services.AddOpenApi();
 
-// --- Bikin Connection String yang Aman buat Npgsql (Railway / Local) ---
-var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// --- BACA DATABASE_URL LANGSUNG DARI RAILWAY ---
+var envConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
+var rawConnectionString = !string.IsNullOrEmpty(envConnectionString) 
+    ? envConnectionString 
+    : builder.Configuration.GetConnectionString("DefaultConnection");
+
 string connectionString;
 
 if (!string.IsNullOrEmpty(rawConnectionString) && rawConnectionString.StartsWith("postgresql://"))
 {
-    // Jika format URL dari Railway (postgresql://user:pass@host:port/db)
     var uri = new Uri(rawConnectionString);
     var userInfo = uri.UserInfo.Split(':');
     var user = userInfo[0];
@@ -30,11 +33,10 @@ if (!string.IsNullOrEmpty(rawConnectionString) && rawConnectionString.StartsWith
     var port = uri.Port > 0 ? uri.Port : 5432;
     var database = uri.AbsolutePath.TrimStart('/');
 
-    connectionString = $"Host={host};Port={port};Database={database};Username={user};Password={password};";
+    connectionString = $"Host={host};Port={port};Database={database};Username={user};Password={password};Ssl Mode=Require;Trust Server Certificate=true;";
 }
 else
 {
-    // Jika format biasa (Host=localhost;Database=...) dari appsettings.json
     connectionString = rawConnectionString!;
 }
 
@@ -69,7 +71,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Auto Apply Migration & Seed Roles saat aplikasi start
+// Migration otomatis ke database Postgres Railway saat start
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -93,7 +95,6 @@ using (var scope = app.Services.CreateScope())
     await db.SaveChangesAsync();
 }
 
-// Buka OpenAPI / Swagger di semua environment (termasuk Production di Railway)
 app.MapOpenApi();
 
 app.UseHttpsRedirection();
